@@ -358,54 +358,13 @@ func registerRemoveFromShoppingList(s *server.MCPServer, deps Deps) {
 			removeByName[strings.ToLower(n)] = true
 		}
 
-		// Filter — keep items NOT in the remove sets.
-		type keepItem struct {
-			ProductID   int    `json:"productId,omitempty"`
-			Description string `json:"description,omitempty"`
-			Quantity    int    `json:"quantity"`
-			Type        string `json:"type"`
-			OriginCode  string `json:"originCode"`
-		}
-		var keepItems []keepItem
-		for _, it := range currentList.Items {
-			pid := it.ProductDetails.Product.WebshopID
-			desc := strings.ToLower(it.Description)
-			if removeByProductID[pid] || removeByName[desc] {
-				continue // drop this item
-			}
-			keepItems = append(keepItems, keepItem{
-				ProductID:   pid,
-				Description: it.Description,
-				Quantity:    it.Quantity,
-				Type:        it.Type,
-				OriginCode:  it.OriginCode,
-			})
-		}
-
 		// Build the removal PATCH payload — quantity 0 signals deletion on the v2 API.
-		type removeItem struct {
-			ProductID   int    `json:"productId,omitempty"`
-			Description string `json:"description,omitempty"`
-			Quantity    int    `json:"quantity"`
-			Type        string `json:"type"`
-			OriginCode  string `json:"originCode"`
-		}
-		var removeItems []removeItem
+		var removeItems []listPatchItem
 		for _, it := range currentList.Items {
 			pid := it.ProductDetails.Product.WebshopID
 			desc := strings.ToLower(it.Description)
 			if removeByProductID[pid] || removeByName[desc] {
-				oc := it.OriginCode
-				if oc == "" {
-					oc = "PRD"
-				}
-				removeItems = append(removeItems, removeItem{
-					ProductID:   pid,
-					Description: it.Description,
-					Quantity:    0,
-					Type:        it.Type,
-					OriginCode:  oc,
-				})
+				removeItems = append(removeItems, removalItem(pid, it.Description, it.ProductDetails.Product.Title, it.Type, it.OriginCode))
 			}
 		}
 		if len(removeItems) == 0 {
@@ -511,7 +470,8 @@ func registerClearShoppingList(s *server.MCPServer, deps Deps) {
 			Description    string `json:"description"`
 			ProductDetails struct {
 				Product struct {
-					WebshopID int `json:"webshopId"`
+					WebshopID int    `json:"webshopId"`
+					Title     string `json:"title"`
 				} `json:"product"`
 			} `json:"productDetails"`
 		}
@@ -525,28 +485,42 @@ func registerClearShoppingList(s *server.MCPServer, deps Deps) {
 		if len(current.Items) == 0 {
 			return mcp.NewToolResultText("Shopping list is already empty."), nil
 		}
-		type zeroItem struct {
-			ProductID   int    `json:"productId,omitempty"`
-			Description string `json:"description,omitempty"`
-			Quantity    int    `json:"quantity"`
-			Type        string `json:"type"`
-			OriginCode  string `json:"originCode"`
-		}
-		zeros := make([]zeroItem, 0, len(current.Items))
+		zeros := make([]listPatchItem, 0, len(current.Items))
 		for _, it := range current.Items {
-			zeros = append(zeros, zeroItem{
-				ProductID:   it.ProductDetails.Product.WebshopID,
-				Description: it.Description,
-				Quantity:    0,
-				Type:        it.Type,
-				OriginCode:  it.OriginCode,
-			})
+			zeros = append(zeros, removalItem(it.ProductDetails.Product.WebshopID, it.Description, it.ProductDetails.Product.Title, it.Type, it.OriginCode))
 		}
 		if err := c.DoRequest(ctx, "PATCH", "/mobile-services/shoppinglist/v2/items", map[string]any{"items": zeros}, nil); err != nil {
 			return errResult(fmt.Sprintf("Failed to clear shopping list: %v", err)), nil
 		}
 		return mcp.NewToolResultText("Shopping list cleared."), nil
 	})
+}
+
+// listPatchItem is one entry of a PATCH /mobile-services/shoppinglist/v2/items
+// body. The endpoint answers 400 "Failed to read request" unless description,
+// strikeThrough, type and originCode are all present.
+type listPatchItem struct {
+	Description   string `json:"description"`
+	ProductID     int    `json:"productId,omitempty"`
+	Quantity      int    `json:"quantity"`
+	Type          string `json:"type"`
+	OriginCode    string `json:"originCode"`
+	StrikeThrough bool   `json:"strikeThrough"`
+}
+
+// removalItem builds the quantity-0 entry that deletes a list item. Fields the
+// GET response left empty fall back to what appie-go sends when adding items.
+func removalItem(productID int, description, title, itemType, originCode string) listPatchItem {
+	if description == "" {
+		description = title
+	}
+	if itemType == "" {
+		itemType = "SHOPPABLE"
+	}
+	if originCode == "" {
+		originCode = "PRD"
+	}
+	return listPatchItem{Description: description, ProductID: productID, Quantity: 0, Type: itemType, OriginCode: originCode}
 }
 
 // --- ah_shopping_list_to_order ---
