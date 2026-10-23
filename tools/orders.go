@@ -66,14 +66,14 @@ func registerGetOrderHistory(s *server.MCPServer, deps Deps) {
 		}
 
 		type orderEntry struct {
-			ID          int     `json:"id"`
-			Date        string  `json:"date,omitempty"`
-			TimeWindow  string  `json:"time_window,omitempty"`
-			TotalPrice  float64 `json:"total_price"`
-			ItemCount   int     `json:"item_count,omitempty"`
-			Status      string  `json:"status"`
-			ShoppingType string `json:"shopping_type,omitempty"`
-			Modifiable  bool    `json:"modifiable"`
+			ID           int     `json:"id"`
+			Date         string  `json:"date,omitempty"`
+			TimeWindow   string  `json:"time_window,omitempty"`
+			TotalPrice   float64 `json:"total_price"`
+			ItemCount    int     `json:"item_count,omitempty"`
+			Status       string  `json:"status"`
+			ShoppingType string  `json:"shopping_type,omitempty"`
+			Modifiable   bool    `json:"modifiable"`
 		}
 		results := make([]orderEntry, 0, len(fulfillments))
 		for i, f := range fulfillments {
@@ -85,13 +85,13 @@ func registerGetOrderHistory(s *server.MCPServer, deps Deps) {
 				date = f.Delivery.Slot.Date
 			}
 			results = append(results, orderEntry{
-				ID:          f.OrderID,
-				Date:        date,
-				TimeWindow:  f.Delivery.Slot.TimeDisplay,
-				TotalPrice:  f.TotalPrice,
-				Status:      f.StatusDescription,
+				ID:           f.OrderID,
+				Date:         date,
+				TimeWindow:   f.Delivery.Slot.TimeDisplay,
+				TotalPrice:   f.TotalPrice,
+				Status:       f.StatusDescription,
 				ShoppingType: f.ShoppingType,
-				Modifiable:  f.Modifiable,
+				Modifiable:   f.Modifiable,
 			})
 		}
 		return jsonResult(results)
@@ -255,7 +255,9 @@ func registerGetFrequentItems(s *server.MCPServer, deps Deps) {
 		type closedResult struct {
 			OrderID  int `json:"orderId"`
 			Delivery struct {
-				Slot struct{ Date string `json:"date"` } `json:"slot"`
+				Slot struct {
+					Date string `json:"date"`
+				} `json:"slot"`
 			} `json:"delivery"`
 		}
 		type closedResp struct {
