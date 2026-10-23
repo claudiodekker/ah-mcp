@@ -89,6 +89,7 @@ Requires Go 1.23+.
 | `AH_MCP_BASE_URL` | `http://localhost:3000` | Public base URL advertised to MCP clients. **Must be set for remote deployments** — otherwise clients receive a `localhost` URL they cannot reach. Example: `https://myserver.example.com` |
 | `AH_TOKENS_PATH` | `~/.config/ah-mcp/tokens.json` | Override the XDG token storage path. Directory is created automatically (mode `0700`). File is written with mode `0600`. |
 | `AH_REMOTE` | `false` | Set to `true` to enable remote mode (same as `--remote` flag). Disables automatic browser opening on login. |
+| `AH_SITE` | `nl` | `nl` or `be`. Selects the Albert Heijn site: API host, login host, client identity and `x-application`. Resolved once at startup. |
 | `AH_LOGIN_START` | `false` | Set to `true` to make `ah_login` return `<AH_CALLBACK_HOST>/start`, which redirects to the real AH login page so the captcha can load. Finish with `callback_url` (see "Captcha does not load"). |
 | `AH_LOGIN_MANUAL` | `false` | Set to `true` to make `ah_login` always return the real AH login URL and start no local proxy (same as `manual=true`). |
 | `AH_MCP_TOKEN` | *(unset)* | Secret token required to access the SSE server. When set, all requests must supply it via `Authorization: Bearer <token>` header or `?token=<token>` query parameter. Strongly recommended for public deployments. |
@@ -108,6 +109,12 @@ Tokens are stored in the XDG-compliant config directory:
 The directory is created with mode `0700` and the file with mode `0600` (owner read/write only). Tokens are refreshed automatically before every API call — you only need to run `ah_login` once.
 
 Override with `AH_TOKENS_PATH` if needed.
+
+## Belgium
+
+Set `AH_SITE=be` to use Albert Heijn Belgium (`api.ah.be`, `login.ah.be`). Tokens are per site: a Dutch token does not work against the Belgian API. When you switch `AH_SITE`, point `AH_TOKENS_PATH` at a separate file (or log out and log in again), otherwise the existing tokens file is reused for the wrong site. With `AH_SITE` unset nothing changes.
+
+Belgian login, search, bonus and profile calls were reported to work in mrserzhan/ah-mcp#12. Token refresh and cart/order writes on `be` are untested.
 
 ## First login
 

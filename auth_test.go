@@ -41,9 +41,9 @@ func TestExchangeCodeSavesTokens(t *testing.T) {
 		io.WriteString(w, `{"access_token":"A","refresh_token":"R","member_id":"7","expires_in":3600}`)
 	}))
 	defer srv.Close()
-	old := ahAPIBase
-	ahAPIBase = srv.URL
-	defer func() { ahAPIBase = old }()
+	old := site
+	site.apiBase = srv.URL
+	defer func() { site = old }()
 
 	path := filepath.Join(t.TempDir(), "tokens.json")
 	if err := ExchangeCode(context.Background(), "appie://login-exit?code=abc12345", path); err != nil {
@@ -65,9 +65,9 @@ func TestExchangeCodeRejectsGarbageWithoutRequest(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
 	defer srv.Close()
-	old := ahAPIBase
-	ahAPIBase = srv.URL
-	defer func() { ahAPIBase = old }()
+	old := site
+	site.apiBase = srv.URL
+	defer func() { site = old }()
 
 	path := filepath.Join(t.TempDir(), "tokens.json")
 	if err := ExchangeCode(context.Background(), "nope!", path); err == nil {
@@ -102,4 +102,40 @@ func TestStartRedirectsToRealLogin(t *testing.T) {
 	stop := flowStop
 	flowStopMu.Unlock()
 	stop()
+}
+
+func TestSiteFor(t *testing.T) {
+	cases := map[string]string{"": "nl", "nl": "nl", "BE": "be", " be ": "be", "xx": "nl"}
+	for in, want := range cases {
+		if got, _ := siteFor(in); got != want {
+			t.Errorf("siteFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+	_, nl := siteFor("")
+	if nl.apiBase != "https://api.ah.nl" || nl.clientID != "appie-ios" || nl.application != "AHWEBSHOP" {
+		t.Errorf("default site changed: %+v", nl)
+	}
+	_, be := siteFor("be")
+	if be.apiBase != "https://api.ah.be" || be.loginBase != "https://login.ah.be" || be.clientID != "appie-be-ios" || be.application != "AHBEWEBSHOP" {
+		t.Errorf("be site wrong: %+v", be)
+	}
+}
+
+func TestTokenCallsCarrySiteIdentity(t *testing.T) {
+	var hdr http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hdr = r.Header.Clone()
+		io.WriteString(w, `{"access_token":"A","refresh_token":"R"}`)
+	}))
+	defer srv.Close()
+	old := site
+	defer func() { site = old }()
+	_, site = siteFor("be")
+	site.apiBase = srv.URL
+	if err := ExchangeCode(context.Background(), "abc12345", filepath.Join(t.TempDir(), "t.json")); err != nil {
+		t.Fatal(err)
+	}
+	if hdr.Get("x-application") != "AHBEWEBSHOP" || hdr.Get("x-client-name") != "appie-be-ios" {
+		t.Errorf("headers = %v", hdr)
+	}
 }

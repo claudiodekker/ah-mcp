@@ -19,12 +19,21 @@ import (
 	"time"
 )
 
-// ahAPIBase is a var so tests can point the token calls at a fake server.
-var ahAPIBase = "https://api.ah.nl"
+// siteConfig holds the per-country AH endpoints and client identity.
+type siteConfig struct{ apiBase, loginBase, clientID, application string }
+
+// siteFor resolves the AH_SITE value. Anything other than "be" is the Dutch site.
+func siteFor(name string) (string, siteConfig) {
+	if strings.EqualFold(strings.TrimSpace(name), "be") {
+		return "be", siteConfig{"https://api.ah.be", "https://login.ah.be", "appie-be-ios", "AHBEWEBSHOP"}
+	}
+	return "nl", siteConfig{"https://api.ah.nl", "https://login.ah.nl", "appie-ios", "AHWEBSHOP"}
+}
+
+// siteName and site are resolved once from AH_SITE. Tests override site.
+var siteName, site = siteFor(os.Getenv("AH_SITE"))
 
 const (
-	ahLoginBase     = "https://login.ah.nl"
-	ahClientID      = "appie-ios"
 	ahClientVersion = "9.28"
 	ahUserAgent     = "Appie/9.28 (iPhone17,3; iPhone; CPU OS 26_1 like Mac OS X)"
 	oauthTimeout    = 5 * time.Minute
@@ -139,7 +148,7 @@ func RefreshIfNeeded(ctx context.Context, path string) error {
 	}
 
 	reqBody := map[string]string{
-		"clientId":     ahClientID,
+		"clientId":     site.clientID,
 		"refreshToken": tf.RefreshToken,
 	}
 	var tok tokenResponse
@@ -177,7 +186,7 @@ func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, 
 		return "", nil, fmt.Errorf("start OAuth server on port %d: %w", callbackPort, listenErr)
 	}
 
-	target, _ := url.Parse(ahLoginBase)
+	target, _ := url.Parse(site.loginBase)
 	codeCh := make(chan string, 1)
 	doneCh := make(chan error, 1)
 
@@ -231,7 +240,7 @@ func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, 
 	// Build the login URL that the user must open (via our local proxy).
 	loginURL = fmt.Sprintf(
 		"%s/login?client_id=%s&response_type=code&redirect_uri=appie://login-exit",
-		callbackHost, ahClientID,
+		callbackHost, site.clientID,
 	)
 	if loginStart {
 		loginURL = callbackHost + "/start"
@@ -273,7 +282,7 @@ var (
 // behind the local proxy. After login the browser is sent to
 // appie://login-exit?code=..., which has to be copied by hand.
 func DirectLoginURL() string {
-	return ahLoginBase + "/login?client_id=" + ahClientID + "&response_type=code&redirect_uri=appie://login-exit"
+	return site.loginBase + "/login?client_id=" + site.clientID + "&response_type=code&redirect_uri=appie://login-exit"
 }
 
 var bareCode = regexp.MustCompile(`^[A-Za-z0-9._~-]{8,}$`)
@@ -319,7 +328,7 @@ func ExchangeCode(ctx context.Context, input, tokensPath string) error {
 // exchangeCodeAndSave exchanges an auth code for tokens and saves them.
 func exchangeCodeAndSave(ctx context.Context, code, tokensPath string) error {
 	reqBody := map[string]string{
-		"clientId": ahClientID,
+		"clientId": site.clientID,
 		"code":     code,
 	}
 	var tok tokenResponse
@@ -344,14 +353,14 @@ func doAHPost(ctx context.Context, path string, body, result any) error {
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ahAPIBase+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, site.apiBase+path, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("User-Agent", ahUserAgent)
-	req.Header.Set("x-client-name", ahClientID)
+	req.Header.Set("x-client-name", site.clientID)
 	req.Header.Set("x-client-version", ahClientVersion)
-	req.Header.Set("x-application", "AHWEBSHOP")
+	req.Header.Set("x-application", site.application)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
