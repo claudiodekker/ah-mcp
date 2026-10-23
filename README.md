@@ -4,6 +4,17 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for the Albert Heijn (🇳🇱) supermarket API. Works with any MCP-compatible client.
 
+This is the maintained fork of [mrserzhan/ah-mcp](https://github.com/mrserzhan/ah-mcp), which is no longer updated. Thanks to mrserzhan for the original server, and to the authors of the upstream pull requests this fork builds on. The license and original copyright stay as they were.
+
+**What the fork adds**
+
+- Order editing on a reopened order: `ah_check_order` (undeliverable and unallocated lines), and `ah_discard_order_changes` (renamed from `ah_revert_order`, because it throws away your edits). You confirm the order in the AH app.
+- Login when the captcha does not load: `ah_login` with `manual=true` and `callback_url`, `AH_LOGIN_START`, and `--login-code`.
+- Belgium through `AH_SITE=be`.
+- Shopping list removal and clearing work again (complete PATCH payload).
+- `ah_get_favorite_lists` works again (`favoriteListV2`).
+- `ah_get_bonus_offers` can return next week's bonus and states the period it covers.
+
 ## What you can do
 
 Things the AH app and website can't do — but your AI assistant can:
@@ -59,7 +70,7 @@ Authentication is handled entirely through a reverse-proxy OAuth flow — no tok
 
 ## Quick start (pre-built binary)
 
-1. Download the latest binary from Releases.
+1. Download the latest binary from [Releases](https://github.com/claudiodekker/ah-mcp/releases).
 2. Run it:
    ```bash
    ./ah-mcp --transport stdio              # local client — browser opens automatically on login
@@ -72,7 +83,7 @@ Authentication is handled entirely through a reverse-proxy OAuth flow — no tok
 ## Build from source
 
 ```bash
-git clone https://github.com/mrserzhan/ah-mcp
+git clone https://github.com/claudiodekker/ah-mcp
 cd ah-mcp
 go build -o ah-mcp .
 ```
