@@ -555,6 +555,46 @@ func registerShoppingListToOrder(s *server.MCPServer, deps Deps) {
 
 // --- ah_get_favorite_lists ---
 
+// favoriteListsQuery is the app's own list query. Empty ids and productIds
+// return every list. The REST endpoint behind appie-go's GetShoppingLists
+// answers 404.
+const favoriteListsQuery = `query FetchFavoriteLists($ids: [String!]!, $productIds: [Int!]!) {
+  favoriteListV2(ids: $ids, productIds: $productIds) { id description totalSize }
+}`
+
+type favoriteListEntry struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	ItemCount int    `json:"item_count"`
+}
+
+func fetchFavoriteLists(ctx context.Context, c *appie.Client) ([]favoriteListEntry, error) {
+	var raw json.RawMessage
+	vars := map[string]any{"ids": []string{}, "productIds": []int{}}
+	if err := c.DoGraphQL(ctx, favoriteListsQuery, vars, &raw); err != nil {
+		return nil, err
+	}
+	return parseFavoriteLists(raw)
+}
+
+func parseFavoriteLists(data []byte) ([]favoriteListEntry, error) {
+	var resp struct {
+		Lists []struct {
+			ID          string `json:"id"`
+			Description string `json:"description"`
+			TotalSize   int    `json:"totalSize"`
+		} `json:"favoriteListV2"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]favoriteListEntry, 0, len(resp.Lists))
+	for _, l := range resp.Lists {
+		out = append(out, favoriteListEntry{ID: l.ID, Name: l.Description, ItemCount: l.TotalSize})
+	}
+	return out, nil
+}
+
 func registerGetFavoriteLists(s *server.MCPServer, deps Deps) {
 	tool := mcp.NewTool("ah_get_favorite_lists",
 		mcp.WithTitleAnnotation("Albert Heijn: View Favourite Lists"),
@@ -575,19 +615,9 @@ func registerGetFavoriteLists(s *server.MCPServer, deps Deps) {
 			return errResult(fmt.Sprintf("Client error: %v", err)), nil
 		}
 
-		lists, err := c.GetShoppingLists(ctx, 0)
+		results, err := fetchFavoriteLists(ctx, c)
 		if err != nil {
 			return errResult(fmt.Sprintf("Failed to get favorite lists: %v", err)), nil
-		}
-
-		type entry struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			ItemCount int    `json:"item_count"`
-		}
-		results := make([]entry, 0, len(lists))
-		for _, l := range lists {
-			results = append(results, entry{ID: l.ID, Name: l.Name, ItemCount: l.ItemCount})
 		}
 		return jsonResult(results)
 	})
