@@ -25,7 +25,7 @@ type checkoutResponse struct {
 }
 
 // checkoutItem holds the fields extracted from a list element when present.
-// Raw always carries the unmodified element.
+// Raw carries the element minus image and presentation fields (see trimRaw).
 type checkoutItem struct {
 	ProductID int             `json:"product_id,omitempty"`
 	Title     string          `json:"title,omitempty"`
@@ -83,10 +83,36 @@ func extractCheckoutItems(raw []json.RawMessage) []checkoutItem {
 		var m map[string]any
 		if json.Unmarshal(r, &m) == nil {
 			item.ProductID, item.Title, item.Reason = findCheckoutFields(m)
+			if trimmed, err := json.Marshal(trimRaw(m)); err == nil {
+				item.Raw = trimmed
+			}
 		}
 		items = append(items, item)
 	}
 	return items
+}
+
+// noisyCheckoutKeys are dropped from raw elements: each product carries five
+// image renditions and display-only fields that bloat the tool output.
+var noisyCheckoutKeys = map[string]bool{"images": true, "extraDescriptions": true, "propertyIcons": true}
+
+func trimRaw(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			if !noisyCheckoutKeys[k] {
+				out[k] = trimRaw(val)
+			}
+		}
+		return out
+	case []any:
+		for i := range t {
+			t[i] = trimRaw(t[i])
+		}
+		return t
+	}
+	return v
 }
 
 // findCheckoutFields looks for a product id, title and reason at the top level

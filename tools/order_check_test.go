@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -98,5 +99,22 @@ func TestIsNotInOrderMode(t *testing.T) {
 	}
 	if isNotInOrderMode(errors.New("API error: 500 boom")) || isNotInOrderMode(nil) {
 		t.Error("unrelated errors misclassified")
+	}
+}
+
+func TestSummarizeCheckoutDropsImages(t *testing.T) {
+	body := []byte(`{"missingBonus":[{"missingBonusOfferQuantity":1,"product":{"webshopId":111388,"title":"AH Iets kruimige aardappelen","images":[{"url":"x"}],"propertyIcons":["lokaal"],"bonusMechanism":"2 voor 1.99","orderAvailabilityStatus":"IN_ASSORTMENT"}}]}`)
+	s, err := summarizeCheckout(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := string(s.MissingBonus[0].Raw)
+	if strings.Contains(raw, "images") || strings.Contains(raw, "propertyIcons") {
+		t.Errorf("raw still has presentation fields: %s", raw)
+	}
+	for _, want := range []string{"2 voor 1.99", "IN_ASSORTMENT", "missingBonusOfferQuantity"} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("raw lost %q: %s", want, raw)
+		}
 	}
 }
