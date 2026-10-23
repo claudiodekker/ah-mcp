@@ -28,6 +28,7 @@ func RegisterOrderTools(s *server.MCPServer, deps Deps) {
 	registerClearCart(s, deps)
 	registerReopenOrder(s, deps)
 	registerUpdateOrderItems(s, deps)
+	registerCheckOrder(s, deps)
 	registerDiscardOrderChanges(s, deps)
 }
 
