@@ -263,9 +263,12 @@ Tokens are stored automatically at `/home/ah-mcp/.config/ah-mcp/tokens.json` —
 | `ah_get_past_orders` | Past/delivered orders. |
 | `ah_get_order_details` | Full item list for a specific past or upcoming order. |
 | `ah_get_frequent_items` | Products you order most often, ranked by frequency. |
-| `ah_reopen_order` | Unlock a submitted order for editing (before closing time). ⚠️ unconfirmed |
-| `ah_update_order_items` | Add/change/remove items in a reopened order. ⚠️ unconfirmed |
-| `ah_revert_order` | Resubmit a reopened order. **Always call this after `ah_reopen_order`.** ⚠️ unconfirmed |
+| `ah_reopen_order` | Reopen a submitted order for editing (before closing time). Confirmed 2026-10-23. |
+| `ah_update_order_items` | Add/change/remove items in a reopened order. Edits persist immediately; leave the order reopened. Confirmed 2026-10-23. |
+| `ah_check_order` | Read-only checkout check on the reopened order: undeliverable items, missing bonus, non-chosen items. |
+| `ah_discard_order_changes` | **Destructive.** Discard all edits since the reopen and restore the order as last submitted. Do not call it to finish editing. |
+
+Editing flow: `ah_reopen_order`, then `ah_update_order_items`, then verify with `ah_get_cart`. Leave the order reopened and confirm it in the Albert Heijn app (status "Bevestigde order via web heropend" becomes "Order is bevestigd"). This server has no confirm step. Untested: what happens to a reopened but unconfirmed order when the change deadline passes.
 
 ### Shopping list
 

@@ -28,7 +28,7 @@ func RegisterOrderTools(s *server.MCPServer, deps Deps) {
 	registerClearCart(s, deps)
 	registerReopenOrder(s, deps)
 	registerUpdateOrderItems(s, deps)
-	registerRevertOrder(s, deps)
+	registerDiscardOrderChanges(s, deps)
 }
 
 // --- ah_get_order_history ---
@@ -794,10 +794,12 @@ func registerReopenOrder(s *server.MCPServer, deps Deps) {
 	tool := mcp.NewTool("ah_reopen_order",
 		mcp.WithTitleAnnotation("Albert Heijn: Reopen Order for Editing"),
 		mcp.WithDescription(
-			"Unlock a submitted AH delivery order so its items can be changed. "+
+			"Reopen a submitted AH delivery order so its items can be changed. "+
 				"The order becomes the active order again (REOPENED state). "+
-				"IMPORTANT: You MUST call ah_revert_order when done, even if editing fails — "+
-				"otherwise the order stays unlocked and interferes with new orders. "+
+				"Edits made with ah_update_order_items persist on the server immediately. "+
+				"Leave the order reopened after editing: do NOT call ah_discard_order_changes, because that throws away every edit made since the reopen. "+
+				"The user must confirm the changes in the Albert Heijn app (status \"Bevestigde order via web heropend\" becomes \"Order is bevestigd\"); this server has no confirm step, so tell the user to do it. "+
+				"Use ah_check_order to look for undeliverable items before the user confirms. "+
 				"Only works before the order's closing time; returns an error if too late. "+
 				"Get order_id from ah_get_order_history (check modifiable=true first).",
 		),
@@ -827,7 +829,7 @@ func registerReopenOrder(s *server.MCPServer, deps Deps) {
 			return errResult(fmt.Sprintf("Failed to reopen order %d: %v", orderID, err)), nil
 		}
 		return mcp.NewToolResultText(fmt.Sprintf(
-			"Order %d is now unlocked (REOPENED). Use ah_update_order_items to make changes, then call ah_revert_order when done.",
+			"Order %d is now reopened. Use ah_update_order_items to make changes and leave the order reopened. The user then confirms the changes in the Albert Heijn app.",
 			orderID,
 		)), nil
 	})
@@ -839,9 +841,11 @@ func registerUpdateOrderItems(s *server.MCPServer, deps Deps) {
 	tool := mcp.NewTool("ah_update_order_items",
 		mcp.WithTitleAnnotation("Albert Heijn: Update Order Items"),
 		mcp.WithDescription(
-			"Add, update, or remove items from the currently active AH order. "+
+			"Add, update, or remove items on the currently active (reopened) AH order. "+
 				"Set quantity=0 to remove an item. "+
-				"Use after ah_reopen_order to edit a submitted delivery order. "+
+				"Use after ah_reopen_order. Changes persist on the server immediately; there is no separate save step. "+
+				"Afterwards leave the order reopened, verify the result with ah_get_cart, and have the user confirm the order in the Albert Heijn app. "+
+				"Do NOT call ah_discard_order_changes to finish: it discards all edits since the reopen. "+
 				"Returns confirmation of the update.",
 		),
 		mcp.WithArray("items",
@@ -912,21 +916,23 @@ func registerUpdateOrderItems(s *server.MCPServer, deps Deps) {
 			}
 		}
 		return mcp.NewToolResultText(fmt.Sprintf(
-			"Order updated: %d item(s) added/changed, %d item(s) removed. Call ah_revert_order to resubmit.",
+			"Order updated: %d item(s) added/changed, %d item(s) removed. Verify with ah_get_cart, then the user confirms the order in the Albert Heijn app.",
 			added, removed,
 		)), nil
 	})
 }
 
-// --- ah_revert_order ---
+// --- ah_discard_order_changes ---
 
-func registerRevertOrder(s *server.MCPServer, deps Deps) {
-	tool := mcp.NewTool("ah_revert_order",
-		mcp.WithTitleAnnotation("Albert Heijn: Resubmit Order"),
+func registerDiscardOrderChanges(s *server.MCPServer, deps Deps) {
+	tool := mcp.NewTool("ah_discard_order_changes",
+		mcp.WithTitleAnnotation("Albert Heijn: Discard Order Changes"),
 		mcp.WithDescription(
-			"Resubmit a reopened AH delivery order back to its scheduled/submitted state. "+
-				"ALWAYS call this after ah_reopen_order, whether editing succeeded or failed. "+
-				"Clears the active order state on the client so the shopping cart works normally again.",
+			"Discard ALL edits made since ah_reopen_order and restore the order as it was last submitted. "+
+				"Destructive: every item change from ah_update_order_items is lost, even though the API reports the order as resubmitted and back on schedule. "+
+				"Only call this when the user explicitly wants to abandon their edits. "+
+				"Do NOT call it to finish an editing session; leave the order reopened so the user can confirm it in the Albert Heijn app. "+
+				"Also clears the active order state on the client so the shopping cart works normally again.",
 		),
 		mcp.WithString("order_id",
 			mcp.Required(),
@@ -951,10 +957,10 @@ func registerRevertOrder(s *server.MCPServer, deps Deps) {
 		}
 
 		if err := c.RevertOrder(ctx, orderID); err != nil {
-			return errResult(fmt.Sprintf("Failed to revert order %d: %v", orderID, err)), nil
+			return errResult(fmt.Sprintf("Failed to discard changes on order %d: %v", orderID, err)), nil
 		}
 		return mcp.NewToolResultText(fmt.Sprintf(
-			"Order %d has been resubmitted. Your delivery is back on schedule.",
+			"Order %d: all edits since the reopen were discarded and the order is restored as last submitted.",
 			orderID,
 		)), nil
 	})

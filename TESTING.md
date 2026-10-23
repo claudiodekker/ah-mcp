@@ -1,6 +1,6 @@
 # ah-mcp Manual Testing Scenarios
 
-Covers all 28 MCP tools in a logical order. Run these from any MCP client (Claude Desktop recommended).
+Covers all 29 MCP tools in a logical order. Run these from any MCP client (Claude Desktop recommended).
 Each scenario shows the prompt to use and what a passing result looks like.
 
 > **Testing status (v1.0.0):** Tested with **Claude Desktop** in **stdio mode** only.
@@ -327,29 +327,37 @@ Expect: Products sorted by order_count descending
 Note:   Scans both open and closed fulfillments; returns empty if no order history available
 ```
 
-### 8.5 Edit a submitted order ⚠️ UNCONFIRMED
+### 8.5 Edit a submitted order (confirmed 2026-10-23)
 ```
-⚠️ UNCONFIRMED: The API calls succeed (reopen → add → revert) but changes did not
-   appear on the AH website or in ah_get_order_details during testing. This may only
-   work on orders in CONFIRMED state (not UNCONFIRMED). Needs further investigation.
-   Do NOT rely on this for real order modifications until confirmed.
+Verified end to end: edits persist server-side and the user confirms them in the AH app.
+Untested: the behaviour of a reopened, unconfirmed order at the change deadline.
 
-Prereq: An order from 8.1 where modifiable=true and state=CONFIRMED
+Prereq: An order from 8.1 where modifiable=true
 
 Step A — Reopen:
 Prompt: "Reopen order <order_id> so I can edit it"
 Tool:   ah_reopen_order  order_id=<id>
-Expect: "Order <id> is now unlocked (REOPENED)."
+Expect: "Order <id> is now reopened."
 
 Step B — Update items:
 Prompt: "Add product <id> quantity 2 to the reopened order"
 Tool:   ah_update_order_items  items=[{"product_id":<id>,"quantity":2}]
 Expect: "Order updated: 1 item(s) added/changed, 0 item(s) removed."
 
-Step C — Revert (ALWAYS required, even if editing failed):
-Prompt: "Resubmit order <order_id>"
-Tool:   ah_revert_order  order_id=<id>
-Expect: "Order <id> has been resubmitted. Your delivery is back on schedule."
+Step C — Verify, then confirm in the app (leave the order reopened):
+Tool:   ah_get_cart
+Expect: The cart shows the edited items. The user then confirms in the AH app:
+        status "Bevestigde order via web heropend" becomes "Order is bevestigd".
+
+Step D — Check deliverability (optional, read-only):
+Tool:   ah_check_order
+Expect: JSON with non_deliverables, missing_bonus, non_chosen (lists) and counts.
+        Before a reopen: "not in order mode" message telling you to reopen first.
+
+Step E — Abandon edits (only to discard them):
+Tool:   ah_discard_order_changes  order_id=<id>
+Expect: "Order <id>: all edits since the reopen were discarded ..."
+        WARNING: this throws away the edits from Step B.
 ```
 
 ---
@@ -407,7 +415,7 @@ Expect: URL → browser login → "Login successful! Connected as <Name>."
 | Shopping list | ah_check_shopping_list_item | ⚠️ broken (listItemId=0) |
 | Cart | ah_get_cart, ah_get_cart_summary, ah_update_cart_item, ah_remove_from_cart, ah_clear_cart | ✅ |
 | Order history | ah_get_order_history, ah_get_past_orders, ah_get_order_details, ah_get_frequent_items | ✅ |
-| Order editing | ah_reopen_order, ah_update_order_items, ah_revert_order | ⚠️ unconfirmed |
+| Order editing | ah_reopen_order, ah_update_order_items, ah_check_order, ah_discard_order_changes | ✅ (confirmed 2026-10-23; deadline behaviour untested) |
 | Receipts | ah_get_receipts, ah_get_receipt_details | ✅ |
 
-**Total: 28 tools**
+**Total: 29 tools**
