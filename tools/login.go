@@ -49,6 +49,12 @@ type Deps struct {
 	IsAuthenticated func() bool
 	// StartOAuthFlow starts the proxy and returns (loginURL, doneChan, err).
 	StartOAuthFlow func(ctx context.Context) (string, <-chan error, error)
+	// ExchangeCode exchanges a pasted callback URL or bare code for tokens.
+	ExchangeCode func(ctx context.Context, input string) error
+	// DirectLoginURL is the real AH login page, used by manual login.
+	DirectLoginURL string
+	// ManualLogin makes ah_login return DirectLoginURL instead of starting the proxy.
+	ManualLogin bool
 	// RefreshIfNeeded refreshes the access token if it is close to expiry.
 	RefreshIfNeeded func(ctx context.Context) error
 	// Server is the MCP server instance (kept for future use).
@@ -86,11 +92,23 @@ func RegisterLoginTool(s *server.MCPServer, deps Deps) {
 			"Log in to Albert Heijn. "+
 				"Local mode: opens your browser automatically and waits — returns success once you log in (single call). "+
 				"Remote mode: returns a URL to open manually, then call ah_login again to confirm. "+
-				"Already authenticated? Returns your name immediately.",
+				"If the captcha does not load, call with manual=true to get the real AH login URL, log in there, "+
+				"copy the final appie://login-exit?code=... address from the browser's network tab (the redirect itself fails), "+
+				"and call ah_login again with callback_url set to that address (or just the code). "+
+				"Already authenticated? Returns your name immediately; call ah_logout first to log in again.",
+		),
+		mcp.WithString("callback_url",
+			mcp.Description("The appie://login-exit?code=... address (or the bare code) copied after logging in on the real AH site."),
+		),
+		mcp.WithBoolean("manual",
+			mcp.Description("Return the real AH login URL and start no local proxy, so the captcha can load. Finish with callback_url."),
 		),
 	)
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return handleLogin(ctx, deps)
+		return handleLogin(ctx, deps, loginArgs{
+			CallbackURL: req.GetString("callback_url", ""),
+			Manual:      req.GetBool("manual", false),
+		})
 	})
 }
 
@@ -132,7 +150,16 @@ func loginSuccess(ctx context.Context, deps Deps) (*mcp.CallToolResult, error) {
 	return mcp.NewToolResultText(fmt.Sprintf("Login successful! Connected as %s %s.", member.FirstName, member.LastName)), nil
 }
 
-func handleLogin(ctx context.Context, deps Deps) (*mcp.CallToolResult, error) {
+type loginArgs struct {
+	CallbackURL string
+	Manual      bool
+}
+
+const manualLoginInstructions = "Open this URL in a normal browser tab with DevTools open (Network tab, \"Preserve log\" on) and log in:\n\n%s\n\n" +
+	"The last redirect to appie://login-exit?code=... will fail in the browser. Copy that address from the Location header " +
+	"and call ah_login again with callback_url set to it. The code is short-lived."
+
+func handleLogin(ctx context.Context, deps Deps, args loginArgs) (*mcp.CallToolResult, error) {
 	// Already authenticated — report immediately.
 	if deps.IsAuthenticated() {
 		c, err := deps.GetClient()
@@ -144,6 +171,20 @@ func handleLogin(ctx context.Context, deps Deps) (*mcp.CallToolResult, error) {
 			return mcp.NewToolResultText("Already logged in (could not fetch member name)."), nil
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Already connected as %s %s.", member.FirstName, member.LastName)), nil
+	}
+
+	if args.CallbackURL != "" {
+		if err := deps.ExchangeCode(ctx, args.CallbackURL); err != nil {
+			return errResult(fmt.Sprintf("Login failed: %v", err)), nil
+		}
+		oauthFlow.Lock()
+		oauthFlow.active = false
+		oauthFlow.Unlock()
+		return loginSuccess(ctx, deps)
+	}
+
+	if args.Manual || deps.ManualLogin {
+		return mcp.NewToolResultText(fmt.Sprintf(manualLoginInstructions, deps.DirectLoginURL)), nil
 	}
 
 	oauthFlow.Lock()
@@ -162,7 +203,7 @@ func handleLogin(ctx context.Context, deps Deps) (*mcp.CallToolResult, error) {
 			url := oauthFlow.loginURL
 			oauthFlow.Unlock()
 			return mcp.NewToolResultText(fmt.Sprintf(
-				"Still waiting for browser login. Please open this URL if you haven't yet:\n\n%s\n\nThen call ah_login again to confirm.",
+				"Still waiting for browser login. Please open this URL if you haven't yet:\n\n%s\n\nThen call ah_login again to confirm. If the captcha does not load, call ah_login with manual=true.",
 				url,
 			)), nil
 		}

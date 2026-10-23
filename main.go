@@ -43,6 +43,7 @@ const (
 func main() {
 	transport := flag.String("transport", "sse", "Transport mode: 'sse', 'streamable-http', or 'stdio'")
 	remote := flag.Bool("remote", false, "Remote mode: disable auto browser-open on login (overridden by AH_REMOTE=true)")
+	loginCode := flag.String("login-code", "", "Exchange a pasted appie://login-exit?code=... address (or bare code) for tokens, save them and exit")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -62,8 +63,22 @@ func main() {
 	// Resolve config from environment.
 	callbackHost := envOr("AH_CALLBACK_HOST", defaultCallbackHost)
 	callbackPort := envIntOr("AH_CALLBACK_PORT", defaultCallbackPort)
+	loginStart := os.Getenv("AH_LOGIN_START") == "true"
 	mcpPort := envIntOr("AH_MCP_PORT", defaultMCPPort)
 	tokensPath := TokensPath()
+
+	if *loginCode != "" {
+		if err := ensureTokenDir(tokensPath); err != nil {
+			fmt.Fprintf(os.Stderr, "[Albert Heijn MCP] could not create token directory: %v\n", err)
+			os.Exit(1)
+		}
+		if err := ExchangeCode(context.Background(), *loginCode, tokensPath); err != nil {
+			fmt.Fprintf(os.Stderr, "[Albert Heijn MCP] login failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "[Albert Heijn MCP] Login successful, tokens saved to %s\n", tokensPath)
+		return
+	}
 
 	// Ensure token directory exists with secure permissions.
 	if err := ensureTokenDir(tokensPath); err != nil {
@@ -85,14 +100,19 @@ func main() {
 		RemoteMode:    *remote,
 		ServerVersion: version,
 		AppieVersion:  appieVersion(),
-		GetClient:    GetClient,
-		ReloadClient: ReloadClient,
+		GetClient:     GetClient,
+		ReloadClient:  ReloadClient,
 		IsAuthenticated: func() bool {
 			return IsAuthenticated(tokensPath)
 		},
 		StartOAuthFlow: func(ctx context.Context) (string, <-chan error, error) {
-			return StartOAuthFlow(ctx, callbackHost, callbackPort, tokensPath)
+			return StartOAuthFlow(ctx, callbackHost, callbackPort, tokensPath, loginStart)
 		},
+		ExchangeCode: func(ctx context.Context, input string) error {
+			return ExchangeCode(ctx, input, tokensPath)
+		},
+		DirectLoginURL: DirectLoginURL(),
+		ManualLogin:    os.Getenv("AH_LOGIN_MANUAL") == "true",
 		RefreshIfNeeded: func(ctx context.Context) error {
 			return RefreshIfNeeded(ctx, tokensPath)
 		},

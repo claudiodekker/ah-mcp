@@ -13,19 +13,22 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
 
+// ahAPIBase is a var so tests can point the token calls at a fake server.
+var ahAPIBase = "https://api.ah.nl"
+
 const (
-	ahAPIBase        = "https://api.ah.nl"
-	ahLoginBase      = "https://login.ah.nl"
-	ahClientID       = "appie-ios"
-	ahClientVersion  = "9.28"
-	ahUserAgent      = "Appie/9.28 (iPhone17,3; iPhone; CPU OS 26_1 like Mac OS X)"
-	oauthTimeout     = 5 * time.Minute
-	tokenRefreshBuf  = 60 * time.Second
+	ahLoginBase     = "https://login.ah.nl"
+	ahClientID      = "appie-ios"
+	ahClientVersion = "9.28"
+	ahUserAgent     = "Appie/9.28 (iPhone17,3; iPhone; CPU OS 26_1 like Mac OS X)"
+	oauthTimeout    = 5 * time.Minute
+	tokenRefreshBuf = 60 * time.Second
 
 	loginSuccessHTML = `<!DOCTYPE html>
 <html><head><title>Login Successful</title></head>
@@ -162,7 +165,12 @@ func RefreshIfNeeded(ctx context.Context, path string) error {
 // The proxy approach is necessary because the AH OAuth server only accepts
 // redirect_uri=appie://login-exit (a custom iOS URL scheme). The proxy
 // intercepts this redirect and converts it to an HTTP callback we can receive.
-func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, tokensPath string) (loginURL string, done <-chan error, err error) {
+//
+// With loginStart set, the returned URL is callbackHost+"/start", which
+// redirects to the real AH login page, so the captcha loads on AH's own domain
+// (mrserzhan/ah-mcp#12). The user then pastes the final appie:// address back
+// via ah_login's callback_url, because nothing hands it to /callback.
+func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, tokensPath string, loginStart bool) (loginURL string, done <-chan error, err error) {
 	addr := fmt.Sprintf("0.0.0.0:%d", callbackPort)
 	listener, listenErr := net.Listen("tcp", addr)
 	if listenErr != nil {
@@ -212,6 +220,9 @@ func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, 
 			http.Error(w, "proxy error", http.StatusBadGateway)
 		},
 	}
+	mux.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, DirectLoginURL(), http.StatusFound)
+	})
 	mux.Handle("/", proxy)
 
 	srv := &http.Server{Handler: mux}
@@ -222,6 +233,14 @@ func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, 
 		"%s/login?client_id=%s&response_type=code&redirect_uri=appie://login-exit",
 		callbackHost, ahClientID,
 	)
+	if loginStart {
+		loginURL = callbackHost + "/start"
+	}
+
+	stop := make(chan struct{})
+	flowStopMu.Lock()
+	flowStop = func() { close(stop) }
+	flowStopMu.Unlock()
 
 	// Wait for the code, exchange it, save tokens — all in background.
 	go func() {
@@ -234,12 +253,66 @@ func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, 
 		select {
 		case code := <-codeCh:
 			doneCh <- exchangeCodeAndSave(context.Background(), code, tokensPath)
+		case <-stop:
+			doneCh <- nil // login was completed through ExchangeCode
 		case <-time.After(oauthTimeout):
 			doneCh <- fmt.Errorf("OAuth flow timed out after 5 minutes")
 		}
 	}()
 
 	return loginURL, doneCh, nil
+}
+
+var (
+	flowStopMu sync.Mutex
+	flowStop   func()
+)
+
+// DirectLoginURL is the real AH login page. The captcha only loads there, not
+// behind the local proxy. After login the browser is sent to
+// appie://login-exit?code=..., which has to be copied by hand.
+func DirectLoginURL() string {
+	return ahLoginBase + "/login?client_id=" + ahClientID + "&response_type=code&redirect_uri=appie://login-exit"
+}
+
+var bareCode = regexp.MustCompile(`^[A-Za-z0-9._~-]{8,}$`)
+
+// ParseLoginCode extracts the auth code from a pasted callback URL
+// (appie://login-exit?code=... or .../callback?code=...) or accepts a bare code.
+func ParseLoginCode(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", fmt.Errorf("empty login code")
+	}
+	if u, err := url.Parse(input); err == nil && u.Scheme != "" {
+		if code := u.Query().Get("code"); code != "" {
+			return code, nil
+		}
+		return "", fmt.Errorf("no code parameter in the pasted URL")
+	}
+	if bareCode.MatchString(input) {
+		return input, nil
+	}
+	return "", fmt.Errorf("could not find a login code in the pasted text")
+}
+
+// ExchangeCode exchanges a pasted callback URL or code for tokens and saves
+// them. A proxy flow that is still waiting is stopped, since it is now moot.
+func ExchangeCode(ctx context.Context, input, tokensPath string) error {
+	code, err := ParseLoginCode(input)
+	if err != nil {
+		return err
+	}
+	if err := exchangeCodeAndSave(ctx, code, tokensPath); err != nil {
+		return err
+	}
+	flowStopMu.Lock()
+	if flowStop != nil {
+		flowStop()
+		flowStop = nil
+	}
+	flowStopMu.Unlock()
+	return nil
 }
 
 // exchangeCodeAndSave exchanges an auth code for tokens and saves them.

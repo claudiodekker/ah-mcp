@@ -89,6 +89,8 @@ Requires Go 1.23+.
 | `AH_MCP_BASE_URL` | `http://localhost:3000` | Public base URL advertised to MCP clients. **Must be set for remote deployments** — otherwise clients receive a `localhost` URL they cannot reach. Example: `https://myserver.example.com` |
 | `AH_TOKENS_PATH` | `~/.config/ah-mcp/tokens.json` | Override the XDG token storage path. Directory is created automatically (mode `0700`). File is written with mode `0600`. |
 | `AH_REMOTE` | `false` | Set to `true` to enable remote mode (same as `--remote` flag). Disables automatic browser opening on login. |
+| `AH_LOGIN_START` | `false` | Set to `true` to make `ah_login` return `<AH_CALLBACK_HOST>/start`, which redirects to the real AH login page so the captcha can load. Finish with `callback_url` (see "Captcha does not load"). |
+| `AH_LOGIN_MANUAL` | `false` | Set to `true` to make `ah_login` always return the real AH login URL and start no local proxy (same as `manual=true`). |
 | `AH_MCP_TOKEN` | *(unset)* | Secret token required to access the SSE server. When set, all requests must supply it via `Authorization: Bearer <token>` header or `?token=<token>` query parameter. Strongly recommended for public deployments. |
 
 Copy `.env.example` to `.env` and uncomment lines you want to change.
@@ -131,6 +133,18 @@ Assistant: calls ah_login
 ```
 
 No configuration needed for local use.
+
+### Captcha does not load
+
+The local login proxy serves `login.ah.nl` from your own host, and AH's captcha can refuse to load there. Log in on AH's real site instead:
+
+1. Call `ah_login` with `manual=true` (or set `AH_LOGIN_MANUAL=true`). It returns the real login URL and starts no proxy.
+2. Open that URL in a normal browser tab with DevTools open, Network tab, "Preserve log" on.
+3. Log in and solve the captcha. The final redirect to `appie://login-exit?code=...` fails in the browser. That is expected.
+4. Copy that address (the `Location` header of the last request).
+5. Call `ah_login` with `callback_url` set to the address. The bare code works too. You must be logged out first (`ah_logout`).
+
+The code is short-lived, so do steps 4 and 5 right away. On a headless server you can run `ah-mcp --login-code '<address>'` instead. It saves the tokens and exits.
 
 ## Client setup guides
 
