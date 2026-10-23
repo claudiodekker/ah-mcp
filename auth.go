@@ -239,7 +239,8 @@ func StartOAuthFlow(ctx context.Context, callbackHost string, callbackPort int, 
 
 	stop := make(chan struct{})
 	flowStopMu.Lock()
-	flowStop = func() { close(stop) }
+	var once sync.Once
+	flowStop = func() { once.Do(func() { close(stop) }) }
 	flowStopMu.Unlock()
 
 	// Wait for the code, exchange it, save tokens — all in background.
