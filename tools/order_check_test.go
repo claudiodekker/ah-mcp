@@ -90,6 +90,9 @@ func TestSummarizeCheckoutRejectsGarbage(t *testing.T) {
 
 func TestIsNotInOrderMode(t *testing.T) {
 	// The appie client turns the 412 body {"message":"Server not in order mode"} into this error text.
+	if !isNotInOrderMode(errors.New("get order failed: Order does not exist: Order should not be null")) {
+		t.Error("no active order should count as not in order mode")
+	}
 	if !isNotInOrderMode(errors.New("Server not in order mode")) {
 		t.Error("412 message not recognised")
 	}

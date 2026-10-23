@@ -50,7 +50,12 @@ const notInOrderModeMessage = "The order is not reopened, so the checkout check 
 // isNotInOrderMode reports whether err is AH's 412 refusal for an order that
 // is not reopened.
 func isNotInOrderMode(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not in order mode")
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	// With no reopened order, the active-order lookup fails before the checkout call does.
+	return strings.Contains(msg, "not in order mode") || strings.Contains(msg, "order does not exist")
 }
 
 // summarizeCheckout turns the checkout response body into the compact result.
@@ -153,6 +158,9 @@ func registerCheckOrder(s *server.MCPServer, deps Deps) {
 		}
 
 		order, err := c.GetOrder(ctx)
+		if isNotInOrderMode(err) {
+			return errResult(notInOrderModeMessage), nil
+		}
 		if err != nil {
 			return errResult(fmt.Sprintf("Failed to get active order: %v", err)), nil
 		}
