@@ -206,12 +206,13 @@ func TestPickDeliveryFulfillment(t *testing.T) {
 		mk(1, "PICKUP", "SUBMITTED", "2026-10-24", false),
 		mk(2, "DELIVERY", "CANCELLED", "2026-10-25", false),
 		mk(3, "DELIVERY", "SUBMITTED", "2026-10-30", false),
-		mk(4, "DELIVERY", "REOPENED", "2026-10-26", false),
-	})
+		mk(4, "DELIVERY", "REOPENED", "2026-10-26", true),
+		mk(5, "DELIVERY", "DELIVERED", "2026-10-10", true),
+	}, "2026-10-23")
 	if !ok || got.OrderID != 4 {
 		t.Errorf("got %+v ok=%v", got, ok)
 	}
-	if _, ok := pickDeliveryFulfillment(nil); ok {
+	if _, ok := pickDeliveryFulfillment(nil, "2026-10-23"); ok {
 		t.Error("empty should not pick")
 	}
 }

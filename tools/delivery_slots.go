@@ -239,10 +239,12 @@ func windowNote(to, latest time.Time, days int) string {
 }
 
 // pickDeliveryFulfillment returns the earliest open, non-cancelled delivery order.
-func pickDeliveryFulfillment(fs []appie.Fulfillment) (appie.Fulfillment, bool) {
+// pickDeliveryFulfillment returns the earliest upcoming, non-cancelled delivery.
+// TransactionCompleted is true for every confirmed order, so it says nothing here.
+func pickDeliveryFulfillment(fs []appie.Fulfillment, today string) (appie.Fulfillment, bool) {
 	var cands []appie.Fulfillment
 	for _, f := range fs {
-		if !strings.EqualFold(f.ShoppingType, "DELIVERY") || f.TransactionCompleted {
+		if !strings.EqualFold(f.ShoppingType, "DELIVERY") || f.Delivery.Slot.Date < today {
 			continue
 		}
 		if strings.Contains(strings.ToUpper(f.Status), "CANCEL") {
@@ -363,7 +365,7 @@ func registerFindDeliverySlots(s *server.MCPServer, deps Deps) {
 			if err != nil {
 				return errResult(fmt.Sprintf("Failed to get order history: %v", err)), nil
 			}
-			f, ok := pickDeliveryFulfillment(fulfillments)
+			f, ok := pickDeliveryFulfillment(fulfillments, time.Now().In(amsterdam).Format("2006-01-02"))
 			if !ok {
 				return errResult("No open delivery order found. Pass order_id explicitly."), nil
 			}
