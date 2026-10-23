@@ -112,6 +112,7 @@ func main() {
 			return ExchangeCode(ctx, input, tokensPath)
 		},
 		DirectLoginURL: DirectLoginURL(),
+		Application:    site.application,
 		ManualLogin:    os.Getenv("AH_LOGIN_MANUAL") == "true",
 		RefreshIfNeeded: func(ctx context.Context) error {
 			return RefreshIfNeeded(ctx, tokensPath)

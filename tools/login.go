@@ -55,6 +55,8 @@ type Deps struct {
 	DirectLoginURL string
 	// ManualLogin makes ah_login return DirectLoginURL instead of starting the proxy.
 	ManualLogin bool
+	// Application is the x-application value of the selected site. Empty means AHWEBSHOP.
+	Application string
 	// RefreshIfNeeded refreshes the access token if it is close to expiry.
 	RefreshIfNeeded func(ctx context.Context) error
 	// Server is the MCP server instance (kept for future use).
@@ -63,6 +65,13 @@ type Deps struct {
 	ServerVersion string
 	// AppieVersion is the version of the appie-go library in use.
 	AppieVersion string
+}
+
+func (d Deps) application() string {
+	if d.Application == "" {
+		return "AHWEBSHOP"
+	}
+	return d.Application
 }
 
 func notAuthResult() *mcp.CallToolResult {
