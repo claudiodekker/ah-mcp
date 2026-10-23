@@ -298,9 +298,16 @@ Tokens are stored automatically at `/home/ah-mcp/.config/ah-mcp/tokens.json` —
 | `ah_reopen_order` | Reopen a submitted order for editing (before closing time). Confirmed 2026-10-23. |
 | `ah_update_order_items` | Add/change/remove items in a reopened order. Edits persist immediately; leave the order reopened. Confirmed 2026-10-23. |
 | `ah_check_order` | Read-only checkout check on the reopened order: undeliverable items, missing bonus, non-chosen items. |
+| `ah_find_delivery_slots` | Read-only: free delivery slots in a `from`/`to` window for an order's address, compared with its current slot. See below. |
 | `ah_discard_order_changes` | **Destructive.** Discard all edits since the reopen and restore the order as last submitted. Do not call it to finish editing. |
 
 Editing flow: `ah_reopen_order`, then `ah_update_order_items`, then verify with `ah_get_cart`. Leave the order reopened and confirm it in the Albert Heijn app (status "Bevestigde order via web heropend" becomes "Order is bevestigd"). This server has no confirm step. Untested: what happens to a reopened but unconfirmed order when the change deadline passes.
+
+### Finding an earlier delivery slot
+
+`ah_find_delivery_slots` takes `from` and `to` (`YYYY-MM-DD` for a whole day or `YYYY-MM-DDTHH:MM`, Europe/Amsterdam). It uses the address of the order in `order_id`, or of your earliest open delivery order. It returns the free slots in the window, each flagged `earlier_than_current`, plus the count of fully booked slots and `earliest_free`. Pass `include_full=true` to list the booked ones too. AH shows about 21 days, and `note` says when the window reaches past that.
+
+The tool cannot move an order, because no API for that is known. Move it in the AH app. To wait for a slot to free up, ask the agent to repeat the call on a schedule (a `/loop` or a session cron) and report only slots that were not free before.
 
 ### Shopping list
 

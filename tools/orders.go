@@ -29,6 +29,7 @@ func RegisterOrderTools(s *server.MCPServer, deps Deps) {
 	registerReopenOrder(s, deps)
 	registerUpdateOrderItems(s, deps)
 	registerCheckOrder(s, deps)
+	registerFindDeliverySlots(s, deps)
 	registerDiscardOrderChanges(s, deps)
 }
 
