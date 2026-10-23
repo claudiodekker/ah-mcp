@@ -118,3 +118,16 @@ func TestSummarizeCheckoutDropsImages(t *testing.T) {
 		}
 	}
 }
+
+func TestFindUnallocatedListsShortLines(t *testing.T) {
+	body := []byte(`{"groupedProductsInTaxonomy":[{"orderedProducts":[
+		{"quantity":1,"allocatedQuantity":1,"product":{"webshopId":164491,"title":"Saitaku Sushi rice"}},
+		{"quantity":1,"allocatedQuantity":0,"product":{"webshopId":583715,"title":"AH Sushi rijst"}}]}]}`)
+	got, err := findUnallocated(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ProductID != 583715 || got[0].Allocated != 0 || got[0].Quantity != 1 {
+		t.Errorf("want only AH Sushi rijst unallocated, got %+v", got)
+	}
+}

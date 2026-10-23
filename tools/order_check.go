@@ -34,14 +34,55 @@ type checkoutItem struct {
 }
 
 type checkoutSummary struct {
-	NonDeliverables     []checkoutItem `json:"non_deliverables"`
-	MissingBonus        []checkoutItem `json:"missing_bonus"`
-	NonChosen           []checkoutItem `json:"non_chosen"`
-	KassaKoopjesCount   int            `json:"kassa_koopjes_count"`
-	RecommendedCount    int            `json:"recommended_products_count"`
-	SamplesCount        int            `json:"samples_count"`
-	ShowMakeCompleet    bool           `json:"show_make_compleet"`
-	NonDeliverableCount int            `json:"non_deliverable_count"`
+	NonDeliverables     []checkoutItem    `json:"non_deliverables"`
+	MissingBonus        []checkoutItem    `json:"missing_bonus"`
+	NonChosen           []checkoutItem    `json:"non_chosen"`
+	KassaKoopjesCount   int               `json:"kassa_koopjes_count"`
+	RecommendedCount    int               `json:"recommended_products_count"`
+	SamplesCount        int               `json:"samples_count"`
+	ShowMakeCompleet    bool              `json:"show_make_compleet"`
+	NonDeliverableCount int               `json:"non_deliverable_count"`
+	Unallocated         []unallocatedItem `json:"unallocated"`
+}
+
+// unallocatedItem is an order line AH could not reserve for the delivery moment.
+// The app shows these as not deliverable; the checkout nonDeliverables list
+// stayed empty for them in testing (2026-10-23).
+type unallocatedItem struct {
+	ProductID int    `json:"product_id"`
+	Title     string `json:"title"`
+	Quantity  int    `json:"quantity"`
+	Allocated int    `json:"allocated"`
+}
+
+type orderDetailsBody struct {
+	Groups []struct {
+		Products []struct {
+			Quantity          int `json:"quantity"`
+			AllocatedQuantity int `json:"allocatedQuantity"`
+			Product           struct {
+				WebshopID int    `json:"webshopId"`
+				Title     string `json:"title"`
+			} `json:"product"`
+		} `json:"orderedProducts"`
+	} `json:"groupedProductsInTaxonomy"`
+}
+
+// findUnallocated lists order lines where AH allocated less than was ordered.
+func findUnallocated(body []byte) ([]unallocatedItem, error) {
+	var d orderDetailsBody
+	if err := json.Unmarshal(body, &d); err != nil {
+		return nil, fmt.Errorf("decode order details: %w", err)
+	}
+	out := []unallocatedItem{}
+	for _, g := range d.Groups {
+		for _, p := range g.Products {
+			if p.AllocatedQuantity < p.Quantity {
+				out = append(out, unallocatedItem{p.Product.WebshopID, p.Product.Title, p.Quantity, p.AllocatedQuantity})
+			}
+		}
+	}
+	return out, nil
 }
 
 const notInOrderModeMessage = "The order is not reopened, so the checkout check is unavailable (AH answers \"Server not in order mode\"). " +
@@ -165,7 +206,8 @@ func registerCheckOrder(s *server.MCPServer, deps Deps) {
 		mcp.WithTitleAnnotation("Albert Heijn: Check Reopened Order"),
 		mcp.WithDescription(
 			"Read-only checkout check for the active (reopened) AH order. "+
-				"Lists items that cannot be delivered (non_deliverables), bonus offers the order misses (missing_bonus) and items not yet chosen (non_chosen), "+
+				"Lists order lines AH could not allocate for the delivery moment (unallocated: the items the app shows as not deliverable), "+
+				"items the checkout reports as non-deliverable (non_deliverables), bonus offers the order misses (missing_bonus) and items not yet chosen (non_chosen), "+
 				"plus counts of the other checkout lists. Each list entry has product_id, title and reason when AH provides them, and always the raw element. "+
 				"Product is_available does NOT reflect deliverability, so use this tool after ah_update_order_items to catch undeliverable items before the user confirms in the Albert Heijn app. "+
 				"Only works while an order is reopened (ah_reopen_order); otherwise it says to reopen first. Does not change the order.",
@@ -202,6 +244,15 @@ func registerCheckOrder(s *server.MCPServer, deps Deps) {
 
 		summary, err := summarizeCheckout(body)
 		if err != nil {
+			return errResult(err.Error()), nil
+		}
+
+		var details json.RawMessage
+		detailsPath := fmt.Sprintf("/mobile-services/order/v1/%s/details-grouped-by-taxonomy", order.ID)
+		if err := c.DoRequest(ctx, http.MethodGet, detailsPath, nil, &details); err != nil {
+			return errResult(fmt.Sprintf("Failed to get order %s details: %v", order.ID, err)), nil
+		}
+		if summary.Unallocated, err = findUnallocated(details); err != nil {
 			return errResult(err.Error()), nil
 		}
 		return jsonResult(summary)
