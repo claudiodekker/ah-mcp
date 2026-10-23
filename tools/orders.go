@@ -831,6 +831,7 @@ func registerReopenOrder(s *server.MCPServer, deps Deps) {
 		if err := c.ReopenOrder(ctx, orderID); err != nil {
 			return errResult(fmt.Sprintf("Failed to reopen order %d: %v", orderID, err)), nil
 		}
+		c.SetOrderID(orderID)
 		return mcp.NewToolResultText(fmt.Sprintf(
 			"Order %d is now reopened. Use ah_update_order_items to make changes and leave the order reopened. The user then confirms the changes in the Albert Heijn app.",
 			orderID,
